@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memory Numbers Game</title>
+    {% csrf_token %}
+    <meta name="htmx-config" content='{"includeIndicatorStyles": false}'>
+    <script src="https://unpkg.com/htmx.org@1.9.6"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-4xl font-bold text-center mb-8">Memory Numbers Game</h1>
+        {% block content %}{% endblock %}
+    </div>
+
+    <script>
+        document.body.addEventListener('htmx:afterRequest', function(evt) {
+            if (evt.detail.successful) {
+                const response = evt.detail.xhr.responseText;
+                if (response.includes('Wrong sequence!')) {
+                    setTimeout(() => {
+                        location.reload();
+                    }, 1500);
+                } else if (response.includes('Level Complete!') || response.includes('Congratulations!')) {
+                    setTimeout(() => {
+                        location.reload();
+                    }, 1500);
+                } else {
+                    // Flip the clicked card
+                    const clickedCard = evt.detail.elt.querySelector('.card');
+                    if (clickedCard) {
+                        clickedCard.style.transform = 'rotateY(0deg)';
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html> 

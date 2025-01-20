@@ -1,0 +1,128 @@
+{% extends 'game/arcade_base.html' %}
+
+{% block content %}
+<div class="text-center mb-6">
+    <h2 class="text-2xl font-semibold">Level {{ game.current_level }}</h2>
+    <p class="text-gray-600">Find {{ game.card_count|divisibleby:2 }} pairs of matching colors</p>
+</div>
+
+<div id="game-board" class="grid gap-4 p-4" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
+    {% for color in game.colors_sequence %}
+    <div class="card-container perspective-500" data-color="{{ color.name }}" data-hex="{{ color.hex }}">
+        <div class="card relative w-full h-40 transform-style-3d transition-transform duration-500">
+            <div class="card-front absolute w-full h-full rounded-lg flex items-center justify-center text-white text-3xl font-bold transform-3d backface-hidden cursor-pointer hover:opacity-90 transition-colors"
+                 style="background-color: {{ color.hex }}">
+            </div>
+            <div class="card-back absolute w-full h-full bg-gray-300 rounded-lg flex items-center justify-center transform-3d backface-hidden rotate-y-180">
+                <span class="text-4xl">?</span>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<style>
+    .perspective-500 { perspective: 500px; }
+    .transform-style-3d { transform-style: preserve-3d; }
+    .transform-3d { transform: rotateY(0deg); }
+    .backface-hidden { backface-visibility: hidden; }
+    .rotate-y-180 { transform: rotateY(180deg); }
+    .matched { opacity: 0.7; pointer-events: none; }
+</style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const containers = document.querySelectorAll('.card-container');
+        const cards = document.querySelectorAll('.card');
+        let firstCard = null;
+        let secondCard = null;
+        let canFlip = true;
+        let matchedPairs = 0;
+        const totalPairs = {{ game.card_count }} / 2;
+        
+        // Initially show all colors
+        cards.forEach(card => {
+            card.style.transform = 'rotateY(0deg)';
+        });
+
+        // Show the cards for 2 seconds
+        setTimeout(() => {
+            cards.forEach(card => {
+                card.style.transform = 'rotateY(180deg)';
+            });
+            
+            // Enable clicking after cards are hidden
+            containers.forEach(container => {
+                container.addEventListener('click', handleCardClick);
+            });
+        }, 2000);
+
+        function handleCardClick(e) {
+            if (!canFlip) return;
+            
+            const container = this;
+            const card = container.querySelector('.card');
+            
+            // Prevent clicking the same card twice
+            if (firstCard === container) return;
+            
+            // Flip the card
+            card.style.transform = 'rotateY(0deg)';
+            
+            if (!firstCard) {
+                // First card of the pair
+                firstCard = container;
+            } else {
+                // Second card of the pair
+                secondCard = container;
+                canFlip = false;
+                
+                // Check if the colors match
+                if (firstCard.dataset.color === secondCard.dataset.color) {
+                    // Match found
+                    matchedPairs++;
+                    firstCard.classList.add('matched');
+                    secondCard.classList.add('matched');
+                    firstCard = null;
+                    secondCard = null;
+                    canFlip = true;
+                    
+                    // Check if level is complete
+                    if (matchedPairs === totalPairs) {
+                        // Send request to check if game is complete
+                        fetch('/game/check-pairs/{{ game.id }}/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            }
+                        })
+                        .then(response => response.text())
+                        .then(responseText => {
+                            document.getElementById('message').innerHTML = responseText;
+                            if (responseText.includes('Level Complete!') || responseText.includes('WINNER!')) {
+                                setTimeout(() => {
+                                    if (!responseText.includes('WINNER!')) {
+                                        location.reload();
+                                    }
+                                }, 1500);
+                            }
+                        });
+                    }
+                } else {
+                    // No match
+                    setTimeout(() => {
+                        firstCard.querySelector('.card').style.transform = 'rotateY(180deg)';
+                        secondCard.querySelector('.card').style.transform = 'rotateY(180deg)';
+                        firstCard = null;
+                        secondCard = null;
+                        canFlip = true;
+                    }, 1000);
+                }
+            }
+        }
+    });
+</script>
+
+<div id="message" class="mt-8"></div>
+{% endblock %} 

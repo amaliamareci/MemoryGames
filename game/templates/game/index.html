@@ -1,0 +1,110 @@
+{% extends 'game/base.html' %}
+
+{% block content %}
+<div class="text-center mb-6">
+    <h2 class="text-2xl font-semibold">Level {{ game.current_level }}</h2>
+    <p class="text-gray-600">Cards: {{ game.card_count }}</p>
+</div>
+
+<div id="game-board" class="grid gap-4 p-4" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
+    {% for number in game.numbers_sequence %}
+    <div class="card-container perspective-500" data-number="{{ number }}">
+        <div class="card relative w-full h-40 transform-style-3d transition-transform duration-500">
+            <div class="card-front absolute w-full h-full bg-blue-500 rounded-lg flex items-center justify-center text-white text-3xl font-bold transform-3d backface-hidden cursor-pointer hover:bg-blue-600 transition-colors">
+                {{ number }}
+            </div>
+            <div class="card-back absolute w-full h-full bg-gray-300 rounded-lg flex items-center justify-center transform-3d backface-hidden rotate-y-180">
+                <span class="text-4xl">?</span>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<style>
+    .perspective-500 { perspective: 500px; }
+    .transform-style-3d { transform-style: preserve-3d; }
+    .transform-3d { transform: rotateY(0deg); }
+    .backface-hidden { backface-visibility: hidden; }
+    .rotate-y-180 { transform: rotateY(180deg); }
+</style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        let currentSequence = 1;
+        const containers = document.querySelectorAll('.card-container');
+        const cards = document.querySelectorAll('.card');
+        const currentLevel = {{ game.current_level }};
+        
+        // Calculate display time: 2 seconds + 0.5 seconds per level after level 1
+        const displayTime = 2000 + (currentLevel - 1) * 500;
+        
+        // Initially show all numbers
+        cards.forEach(card => {
+            card.style.transform = 'rotateY(0deg)';
+        });
+
+        // Show the current display time
+        const message = document.getElementById('message');
+        message.innerHTML = `<div class="text-center mb-4">
+            <p class="text-gray-600">Memorize the cards in ${displayTime/1000} seconds...</p>
+        </div>`;
+        
+        // After calculated time, hide all numbers
+        setTimeout(() => {
+            cards.forEach(card => {
+                card.style.transform = 'rotateY(180deg)';
+            });
+            message.innerHTML = '';
+            
+            // Enable clicking after cards are hidden
+            containers.forEach(container => {
+                container.addEventListener('click', handleCardClick);
+            });
+        }, displayTime);
+
+        function handleCardClick(e) {
+            const container = this;
+            const card = container.querySelector('.card');
+            const clickedNumber = parseInt(container.dataset.number);
+
+            // Send request to check sequence
+            fetch('/game/check/{{ game.id }}/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: new URLSearchParams({
+                    'number': clickedNumber,
+                    'current_index': currentSequence - 1
+                })
+            })
+            .then(response => response.text())
+            .then(responseText => {
+                if (!responseText.includes('Wrong sequence!')) {
+                    // Correct number clicked
+                    card.style.transform = 'rotateY(0deg)';
+                    if (!isNaN(responseText)) {
+                        currentSequence = parseInt(responseText) + 1;
+                    }
+                    
+                    if (responseText.includes('Level Complete!')) {
+                        document.getElementById('message').innerHTML = responseText;
+                        setTimeout(() => location.reload(), 1500);
+                    } else if (responseText.includes('WINNER!')) {
+                        // Show the winner screen without auto-refresh
+                        document.getElementById('message').innerHTML = responseText;
+                    }
+                } else {
+                    // Wrong number clicked
+                    document.getElementById('message').innerHTML = responseText;
+                    setTimeout(() => location.reload(), 1500);
+                }
+            });
+        }
+    });
+</script>
+
+<div id="message" class="mt-8"></div>
+{% endblock %} 

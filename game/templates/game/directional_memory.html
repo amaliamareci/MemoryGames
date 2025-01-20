@@ -1,0 +1,191 @@
+{% extends 'game/arcade_base.html' %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8" data-game-id="{{ game.id }}">
+    <!-- Game Header -->
+    <div class="text-center mb-8">
+        <h1 class="text-4xl font-bold mb-4">Directional Memory</h1>
+        <div class="text-xl">
+            Level: {{ game.current_level }} | Sequence Length: {{ game.sequence_length }}
+        </div>
+    </div>
+
+    <!-- Sequence Display Area -->
+    <div id="sequence-display" class="mb-8">
+        <div class="flex justify-center items-center space-x-4 text-4xl h-24">
+            {% for arrow in game.arrow_sequence %}
+                <div class="arrow-display opacity-0 transition-opacity duration-300">{{ arrow }}</div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Feedback Display -->
+    <div id="feedback-display" class="mb-8">
+        <div class="flex justify-center items-center space-x-4 text-4xl h-24">
+            {% for arrow in game.arrow_sequence %}
+                <div class="feedback-slot w-12 h-12 border-2 border-gray-300 rounded-lg"></div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Arrow Buttons -->
+    <div class="flex flex-col items-center space-y-4">
+        <!-- Up arrow -->
+        <button class="arrow-btn p-4 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-3xl w-16 h-16 flex items-center justify-center transition-colors duration-300"
+                data-arrow="↑">↑</button>
+        <!-- Middle row (Left, Down, Right) -->
+        <div class="flex space-x-4">
+            <button class="arrow-btn p-4 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-3xl w-16 h-16 flex items-center justify-center transition-colors duration-300"
+                    data-arrow="←">←</button>
+            <button class="arrow-btn p-4 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-3xl w-16 h-16 flex items-center justify-center transition-colors duration-300"
+                    data-arrow="↓">↓</button>
+            <button class="arrow-btn p-4 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-3xl w-16 h-16 flex items-center justify-center transition-colors duration-300"
+                    data-arrow="→">→</button>
+        </div>
+    </div>
+
+    <!-- Status Message -->
+    <div id="status-message" class="text-center mt-6 h-12">
+        <p class="text-xl font-bold"></p>
+    </div>
+
+    <!-- Reset Button -->
+    <div class="text-center mt-8">
+        <form hx-post="{% url 'game:reset_direction' game.id %}" class="inline">
+            {% csrf_token %}
+            <button type="submit" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded">
+                Reset Game
+            </button>
+        </form>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    let currentIndex = 0;
+    const arrowButtons = document.querySelectorAll('.arrow-btn');
+    const arrowDisplays = document.querySelectorAll('.arrow-display');
+    const feedbackSlots = document.querySelectorAll('.feedback-slot');
+    const statusMessage = document.querySelector('#status-message p');
+    const gameId = document.querySelector('.container').dataset.gameId;
+    
+    // Disable buttons initially
+    arrowButtons.forEach(btn => btn.disabled = true);
+
+    // Show sequence with delay
+    setTimeout(showSequence, 1000);
+
+    function showSequence() {
+        statusMessage.textContent = "Watch the sequence...";
+        statusMessage.className = "text-xl font-bold text-blue-600";
+        
+        let index = 0;
+        const interval = setInterval(() => {
+            if (index < arrowDisplays.length) {
+                arrowDisplays[index].classList.remove('opacity-0');
+                index++;
+            } else {
+                clearInterval(interval);
+                // Hide sequence after a delay
+                setTimeout(hideSequence, 2000);
+            }
+        }, 1000);
+    }
+
+    function hideSequence() {
+        arrowDisplays.forEach(display => {
+            display.classList.add('opacity-0');
+        });
+        // Enable buttons after sequence is hidden
+        arrowButtons.forEach(btn => btn.disabled = false);
+        statusMessage.textContent = "Your turn! Replicate the sequence";
+        statusMessage.className = "text-xl font-bold text-purple-600";
+    }
+
+    function updateFeedbackSlot(index, isCorrect, arrow) {
+        const slot = feedbackSlots[index];
+        slot.textContent = arrow;
+        slot.className = `feedback-slot w-12 h-12 rounded-lg flex items-center justify-center ${
+            isCorrect ? 'bg-green-500' : 'bg-red-500'
+        } text-white transition-all duration-300`;
+    }
+
+    function showWrongSequence() {
+        statusMessage.textContent = "Wrong sequence! Starting over...";
+        statusMessage.className = "text-xl font-bold text-red-600";
+        
+        // Show the correct sequence briefly before reloading
+        arrowDisplays.forEach((display, index) => {
+            display.classList.remove('opacity-0');
+            display.classList.add('text-red-500');
+        });
+
+        // Disable all buttons
+        arrowButtons.forEach(btn => btn.disabled = true);
+
+        // Reset feedback slots to show they were wrong
+        feedbackSlots.forEach(slot => {
+            if (slot.textContent) {
+                slot.className = 'feedback-slot w-12 h-12 rounded-lg flex items-center justify-center bg-red-500 text-white transition-all duration-300';
+            }
+        });
+    }
+
+    // Handle arrow button clicks
+    arrowButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const clickedArrow = this.dataset.arrow;
+            
+            // Disable all buttons while checking
+            arrowButtons.forEach(btn => btn.disabled = true);
+            
+            // Check if the arrow is correct
+            fetch(`/game/check-direction/${gameId}/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: `arrow=${encodeURIComponent(clickedArrow)}&current_index=${currentIndex}`
+            })
+            .then(response => response.text())
+            .then(text => {
+                if (text.includes('Wrong sequence')) {
+                    updateFeedbackSlot(currentIndex, false, clickedArrow);
+                    showWrongSequence();
+                    // Wrong sequence - reload page after delay
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 2000);
+                } else if (text.includes('Level Complete')) {
+                    updateFeedbackSlot(currentIndex, true, clickedArrow);
+                    statusMessage.textContent = "Level Complete! Moving to next level...";
+                    statusMessage.className = "text-xl font-bold text-green-600";
+                    // Level complete - reload page after delay
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1500);
+                } else if (text.includes('WINNER')) {
+                    updateFeedbackSlot(currentIndex, true, clickedArrow);
+                    // Game complete - show winner screen
+                    document.body.insertAdjacentHTML('beforeend', text);
+                } else {
+                    // Correct arrow - enable buttons and update index
+                    updateFeedbackSlot(currentIndex, true, clickedArrow);
+                    currentIndex = parseInt(text);
+                    arrowButtons.forEach(btn => btn.disabled = false);
+                    statusMessage.textContent = "Correct! Keep going...";
+                    statusMessage.className = "text-xl font-bold text-green-600";
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                arrowButtons.forEach(btn => btn.disabled = false);
+                statusMessage.textContent = "An error occurred. Please try again.";
+                statusMessage.className = "text-xl font-bold text-red-600";
+            });
+        });
+    });
+});
+</script>
+{% endblock %} 
